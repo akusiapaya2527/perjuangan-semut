@@ -1491,6 +1491,10 @@ def player_array(u, cid=0, cname=""):
 
 
 def handle_flashapi(body: dict):
+    global UID
+    request_uid = body.get("mid")
+    if request_uid is not None and str(request_uid) in DB.get("users", {}):
+        UID = int(request_uid)
     method = body.get("method", "")
     log("HTTP", "flashapi method=%s" % method)
     if method == "GameMember.load":

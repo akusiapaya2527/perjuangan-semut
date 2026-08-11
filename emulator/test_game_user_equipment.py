@@ -44,6 +44,14 @@ class GameUserEquipmentTests(unittest.TestCase):
         self.assertEqual(1, reader.int())
         self.assertEqual(1, reader.int())  # onlyID of aryma's equipped weapon
 
+    def test_flashapi_uses_request_mid_for_weapon_queue(self):
+        backend.UID = 1000001
+        result = backend.handle_flashapi({"mid": 1000002,
+                                          "method": "GameProps.get_fight_weapons",
+                                          "param": []})
+        self.assertEqual(0, result["ret"])
+        self.assertEqual(1, result["weapon"][0][0])
+
 
 if __name__ == "__main__":
     unittest.main()
