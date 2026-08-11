@@ -2686,6 +2686,67 @@ class BattleServer(SocketServer):
             self.room_seq = 0
         return self.rooms
 
+    @staticmethod
+    def _room_capacity(room):
+        return 2 if int(room.get("mode", 0)) == 0 else 4
+
+    def _player_uid(self, conn):
+        return int(getattr(self, "client_uids", {}).get(conn, UID))
+
+    def _player_name(self, uid):
+        user = get_user(DB, uid) or {}
+        return user.get("babyName") or user.get("name") or ("Player %d" % uid)
+
+    def _room_enter_packet(self, room, player):
+        w = P.Writer()
+        w.int(room["id"]); w.int(player["siteID"]); w.int(player["team"])
+        w.int(1 if player.get("owner") else 0)
+        w.int(room["mode"]); w.int(room["ptype"])
+        count = self._room_capacity(room)
+        w.int(count)
+        occupied = {p["siteID"] for p in room["players"].values()}
+        for site in range(count):
+            w.int(1 if site in occupied else 0)
+        w.int(room.get("mapID", 1001)); w.string(room.get("pw", ""))
+        return w
+
+    def _player_packet(self, room, player):
+        uid = player["uid"]
+        user = get_user(DB, uid) or {}
+        sex = int(user.get("gender", user.get("babySex", 0)) or 0)
+        name = self._player_name(uid)
+        char_info = json.dumps({"babySex": sex, "babyName": name,
+                                "mgender": sex, "mrolename": name}, ensure_ascii=False)
+        props = user.get("equipment") or user.get("props") or []
+        prop_info = json.dumps([0, props], ensure_ascii=False) if props else ""
+        w = P.Writer()
+        w.int(uid); w.int(player["siteID"]); w.int(player["team"])
+        w.int(1 if player.get("ready") else 0); w.int(1 if player.get("owner") else 0)
+        w.string(char_info); w.string(prop_info)
+        w.int(int(user.get("exp", 0) or 0)); w.int(int(user.get("losses", 0) or 0))
+        w.int(int(user.get("wins", 0) or 0)); w.int(0)
+        return w
+
+    def room_list_rows(self, mode_filter=0):
+        rows = []
+        for room in self._room_state().values():
+            if mode_filter and int(room.get("mode", 0)) != int(mode_filter):
+                continue
+            current = len(room["players"])
+            rows.append([room["id"], room["ownerUid"], self._player_name(room["ownerUid"]),
+                         room["mode"], room["ptype"], current, self._room_capacity(room),
+                         1 if room.get("fighting") else 0,
+                         1 if current < self._room_capacity(room) and not room.get("fighting") else 0,
+                         room.get("pw", "")])
+        return rows
+
+    def send_room_list(self, conn, mode_filter=0):
+        w = P.Writer(); rows = self.room_list_rows(mode_filter); w.int(len(rows))
+        for row in rows:
+            w.int(row[0]); w.int(row[1]); w.string(row[2]); w.int(row[3]); w.int(row[4])
+            w.int(row[5]); w.int(row[6]); w.int(row[7]); w.int(row[8]); w.string(row[9])
+        self.send_cmd(conn, 3007, w)
+
     def create_room(self, conn, pw, mode, ptype):
         """cmd 3008 createRoom [pw, type(player count mode), mode]:
         -> cmd 5 enterRoom so the lobby shows the room UI with the owner.
@@ -2693,22 +2754,56 @@ class BattleServer(SocketServer):
         rooms = self._room_state()
         self.room_seq += 1
         rid = self.room_seq
-        rooms[rid] = {"pw": pw, "mode": mode, "ptype": ptype, "mapID": 1001}
-        n = 2 if mode == 0 else 4  # site count (singlePlayer 2 / multiPlayer 4)
-        w = P.Writer()
-        w.int(rid)          # roomid
-        w.int(0)            # siteID (self = site 0)
-        w.int(0)            # team
-        w.int(1)            # isHouseOwner = 1 (pemilik kamar)
-        w.int(mode)         # pk_type
-        w.int(ptype)        # pk_mode (0 = 2 pemain, 1 = 4 pemain)
-        w.int(n)            # siteStatusArr count
-        for _ in range(n):
-            w.int(0)        # semua site kosong
-        w.int(1001)         # mapID
-        w.string(pw)        # password (kosong di room practice)
+        uid = self._player_uid(conn)
+        player = {"conn": conn, "uid": uid, "siteID": 0, "team": 0,
+                  "owner": True, "ready": False}
+        rooms[rid] = {"id": rid, "pw": pw, "mode": int(mode), "ptype": int(ptype),
+                      "mapID": 1001, "ownerUid": uid, "fighting": False,
+                      "players": {conn: player}}
+        w = self._room_enter_packet(rooms[rid], player)
         self.send_cmd(conn, 5, w)
         log("BATTLE", "room %d dibuat mode=%d type=%d pw='%s'" % (rid, mode, ptype, pw))
+        return rid
+
+    def join_room(self, conn, room_id, pw):
+        room = self._room_state().get(int(room_id))
+        if not room:
+            w = P.Writer(); w.int(0); self.send_cmd(conn, 3000, w); return False
+        if room.get("pw", "") != pw:
+            w = P.Writer(); w.int(4); self.send_cmd(conn, 12, w); return False
+        if room.get("fighting") or len(room["players"]) >= self._room_capacity(room):
+            w = P.Writer(); w.int(2); self.send_cmd(conn, 12, w); return False
+        if conn in room["players"]:
+            self.send_cmd(conn, 5, self._room_enter_packet(room, room["players"][conn]))
+            return True
+        used = {p["siteID"] for p in room["players"].values()}
+        site = next(i for i in range(self._room_capacity(room)) if i not in used)
+        player = {"conn": conn, "uid": self._player_uid(conn), "siteID": site,
+                  "team": site % 2, "owner": False, "ready": False}
+        room["players"][conn] = player
+        self.send_cmd(conn, 5, self._room_enter_packet(room, player))
+        for other in room["players"].values():
+            if other is player:
+                continue
+            self.send_cmd(conn, 6, self._player_packet(room, other))
+            self.send_cmd(other["conn"], 6, self._player_packet(room, player))
+        return True
+
+    def leave_room(self, conn):
+        for room_id, room in list(self._room_state().items()):
+            player = room["players"].pop(conn, None)
+            if player is None:
+                continue
+            w = P.Writer(); w.int(player["uid"])
+            for other in room["players"].values():
+                self.send_cmd(other["conn"], 7, w)
+            if not room["players"]:
+                del self.rooms[room_id]
+            elif player.get("owner"):
+                next_player = next(iter(room["players"].values()))
+                next_player["owner"] = True
+                room["ownerUid"] = next_player["uid"]
+            return
 
     def arena_monster(self):
         """Monster yang tampil di robot duel (mapID 1001 = arena), fallback pertama."""
@@ -2768,6 +2863,7 @@ class BattleServer(SocketServer):
 
     def session(self, conn, addr):
         log("BATTLE", "client connected %s" % (addr,))
+        session_uid = self.client_uids.get(conn, UID)
         while True:
             fr = self.recv_frame(conn)
             if fr is None:
@@ -2775,7 +2871,10 @@ class BattleServer(SocketServer):
             cmd, body = fr
             r = P.Reader(body)
             log("BATTLE", "<- cmd %d" % cmd)
-            if cmd == 0:  # sendLogin (BattleServer login)
+            if cmd in (0, 1001):  # legacy login / real SendCmd.sendLogin
+                if cmd == 1001 and r.pos < len(body):
+                    session_uid = r.int()
+                    self.client_uids[conn] = session_uid
                 w = P.Writer()
                 w.string("")   # versions
                 w.int(0)       # exp
@@ -2783,19 +2882,52 @@ class BattleServer(SocketServer):
                 w.string("")   # goodsStr
                 w.int(0)       # rank
                 self.send_cmd(conn, 1, w)  # loginBTSuccessful, ret=0 hardcoded client-side
-            elif cmd == 3007:  # getFightList -> room list (empty ok)
-                w = P.Writer()
-                w.int(0)       # roomSize
-                self.send_cmd(conn, 3007, w)
+            elif cmd == 3007:  # getFightList -> shared room list
+                mode_filter = r.int() if r.pos < len(body) else 0
+                self.send_room_list(conn, mode_filter)
             elif cmd == 3008:  # createRoom [pw, type, mode] -> enter room (cmd 5)
                 pw = r.string() if r.pos < len(body) else ""
                 ptype = r.int() if r.pos < len(body) else 0
                 mode = r.int() if r.pos < len(body) else 0
                 self.create_room(conn, pw, mode, ptype)
+            elif cmd == 13:  # seekRoom [roomId, password]
+                room_id = r.int() if r.pos < len(body) else 0
+                pw = r.string() if r.pos < len(body) else ""
+                self.join_room(conn, room_id, pw)
+            elif cmd == 8:  # tolerate clients that send the response command back
+                ready = r.int() if r.pos < len(body) else 1
+                for room in self._room_state().values():
+                    player = room["players"].get(conn)
+                    if player is None:
+                        continue
+                    player["ready"] = bool(ready)
+                    for other in room["players"].values():
+                        ready_packet = P.Writer()
+                        ready_packet.int(player["siteID"])
+                        ready_packet.int(1 if player["ready"] else 0)
+                        self.send_cmd(other["conn"], 8, ready_packet)
+                    break
             elif cmd == 7:  # selfReady(1) dari pemilik kamar -> mulai practice robot
-                r.int()  # ready flag
-                self.send_robot_come(conn)
-                self.send_start_robot(conn)
+                ready = r.int() if r.pos < len(body) else 1
+                found_room = False
+                for room in self._room_state().values():
+                    player = room["players"].get(conn)
+                    if player is None:
+                        continue
+                    found_room = True
+                    player["ready"] = bool(ready)
+                    ready_packet = P.Writer()
+                    ready_packet.int(player["siteID"])
+                    ready_packet.int(1 if player["ready"] else 0)
+                    for other in room["players"].values():
+                        self.send_cmd(other["conn"], 8, ready_packet)
+                    if room["mode"] == 0 and ready:
+                        self.send_robot_come(conn)
+                        self.send_start_robot(conn)
+                        break
+                if not found_room:
+                    self.send_robot_come(conn)
+                    self.send_start_robot(conn)
             elif cmd == 6:  # quickJoin -> enterRoom (cmd 5) then startRobot (cmd 39)
                 # enterRoom: roomid, siteID, team, isHouseOwner, pk_type, pk_mode,
                 #            siteStatusArr(count+ints), mapID, password
@@ -2875,6 +3007,8 @@ class BattleServer(SocketServer):
                 self.send_cmd(conn, 1006, w)  # onGameOver
             else:
                 log("BATTLE", "unhandled cmd %d body=%s" % (cmd, body.hex()))
+        self.leave_room(conn)
+        self.client_uids.pop(conn, None)
 
 
 class CopyServer(SocketServer):
