@@ -2439,9 +2439,10 @@ class GameServer(SocketServer):
             r = P.Reader(body)
             if len(body) >= 4:
                 incoming_uid = r.int()
-                if cmd == 1001 and str(incoming_uid) in DB.get("users", {}):
+                if cmd == 1001 and incoming_uid > 0:
                     session_uid = int(incoming_uid)
                     self.client_uids[conn] = session_uid
+                    log("GAME", "session bound uid=%d" % session_uid)
                 log("GAME", "<- cmd %d uid=%s" % (cmd, incoming_uid))
             else:
                 log("GAME", "<- cmd %d (no body)" % cmd)
@@ -2452,10 +2453,10 @@ class GameServer(SocketServer):
                 w.int(0)       # online seconds / 60
                 self.send_cmd(conn, 1008, w)
             elif cmd == 3014:  # getAllGoods
-                u = get_user(DB, UID)
+                u = get_user(DB, session_uid)
                 goods = u["goods"] if u else []
                 w = P.Writer()
-                w.int(UID)     # uid
+                w.int(session_uid)     # uid
                 w.short(2)     # mode 2 => callback (GoodsList.getAllGoodsCB)
                 w.int(len(goods))
                 for g in goods:
@@ -2466,7 +2467,7 @@ class GameServer(SocketServer):
                 # necklace,hat,glove,wing,chatframe,dbexpcard,weapon,weddingring
                 slots = [0] * 13
                 place = ""
-                u = get_user(DB, UID)
+                u = get_user(DB, session_uid)
                 if u:
                     for g in equipped_goods(u):
                         idx = {
@@ -2479,7 +2480,7 @@ class GameServer(SocketServer):
                         slots[idx] = int(g.get("onlyID", 0))
                     place = str(u.get("place", ""))
                 w = P.Writer()
-                w.int(UID)     # uid
+                w.int(session_uid)     # uid
                 w.short(0)     # flag 0 => ok
                 for s in slots:
                     w.int(s)   # onlyID of equipped good, or 0
@@ -2487,7 +2488,7 @@ class GameServer(SocketServer):
                 self.send_cmd(conn, 3016, w)
             elif cmd == 1:  # getServerList
                 w = P.Writer()
-                w.int(UID)     # ignored
+                w.int(session_uid)     # ignored
                 w.int(2)       # count: battle + copy
                 # serverID 1, svtype 1 (BATTLE)
                 w.int(1); w.int(1)
@@ -2510,31 +2511,31 @@ class GameServer(SocketServer):
                     svtype = sub.int()
                 svid = 2 if svtype == 3 else 1
                 w = P.Writer()
-                w.int(UID)     # uid
+                w.int(session_uid)     # uid
                 w.int(svid)    # svid -> CopyServer for svtype3, else BattleServer
                 self.send_cmd(conn, 4, w)
             elif cmd == 3052:  # consumeEnergy: [uid] -> [userId, type:short, energy:short]
-                u = get_user(DB, UID)
+                u = get_user(DB, session_uid)
                 en = energy_now(u)
                 if en < COPY_COST:
                     w = P.Writer()
-                    w.int(UID); w.short(-1); w.short(en)
+                    w.int(session_uid); w.short(-1); w.short(en)
                 else:
                     energy_commit(u, en - COPY_COST)
                     save_db(DB)
                     w = P.Writer()
-                    w.int(UID); w.short(0); w.short(en - COPY_COST)
+                    w.int(session_uid); w.short(0); w.short(en - COPY_COST)
                 self.send_cmd(conn, 3052, w)
             elif cmd == 3110:  # someOneVipLevel broadcast
                 # ProcessCmd reads self:int, who:int, level:int (3 ints)
                 w = P.Writer()
-                w.int(UID)     # self
-                w.int(UID)     # who
+                w.int(session_uid)     # self
+                w.int(session_uid)     # who
                 w.int(0)       # level (no vip)
                 self.send_cmd(conn, 3110, w)
             elif cmd == 3111:  # getVipViewInfo
                 w = P.Writer()
-                w.int(UID)     # mid
+                w.int(session_uid)     # mid
                 for _ in range(7):
                     w.int(0)   # vipLevel..failreason
                 w.int(0)       # giftNum
@@ -2545,15 +2546,15 @@ class GameServer(SocketServer):
                 w.int(0)
                 self.send_cmd(conn, cmd, w)
             elif cmd == 3051:  # getEnergy: reply userId/type/energy
-                u = get_user(DB, UID)
+                u = get_user(DB, session_uid)
                 w = P.Writer()
-                w.int(UID)                    # userId
+                w.int(session_uid)                    # userId
                 w.short(0)                    # type
                 w.short(energy_now(u))        # energy incl. time regen
                 self.send_cmd(conn, 3051, w)
             elif cmd == 3114:  # getAutoFightTimes: reply mid/todayCount
                 w = P.Writer()
-                w.int(UID)     # mid
+                w.int(session_uid)     # mid
                 w.int(0)       # todayCount
                 self.send_cmd(conn, 3114, w)
             elif cmd == 3119:  # getBagItemRentStatus
@@ -2585,19 +2586,19 @@ class GameServer(SocketServer):
                     only = sub.int() if sub.pos + 4 <= len(body) else 0
                 except Exception:
                     pass
-                u = get_user(DB, UID)
+                u = get_user(DB, session_uid)
                 done = None
                 if u and only:
                     done = set_equipment_state(u, place, flag, only)
                     if done:
                         if flag:
-                            advance_quests(DB, UID, 180, int(done.get("typeID", 0)),
+                            advance_quests(DB, session_uid, 180, int(done.get("typeID", 0)),
                                            int(done.get("frameID", 0)), 1)
                         save_db(DB)
                 # reply: uid, flag 0 => ok, place, equip status (1 on / 0 off).
                 # Client readGoods() only when status != 0, so goods only when equipped.
                 w = P.Writer()
-                w.int(UID)     # uid
+                w.int(session_uid)     # uid
                 w.short(0)     # flag 0 => ok
                 w.string(place)
                 w.int(1 if flag else 0)
@@ -2717,7 +2718,7 @@ class BattleServer(SocketServer):
         name = self._player_name(uid)
         char_info = json.dumps({"babySex": sex, "babyName": name,
                                 "mgender": sex, "mrolename": name}, ensure_ascii=False)
-        props = user.get("equipment") or user.get("props") or []
+        props = [goods_array(g) for g in equipped_goods(user)]
         prop_info = json.dumps([0, props], ensure_ascii=False) if props else ""
         w = P.Writer()
         w.int(uid); w.int(player["siteID"]); w.int(player["team"])
