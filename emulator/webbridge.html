@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Perjuangan Semut — Remote Play</title>
+<style>
+  :root {
+    --bg: #10131a; --panel: #171b24; --line: #262c3a;
+    --text: #d7dce6; --dim: #8b93a5; --accent: #e6b450; --ok: #57c98a; --bad: #e06c6c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+    border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  header .tag { color: var(--accent); }
+  #status { margin-left: auto; display: flex; align-items: center; gap: 14px; color: var(--dim); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bad); display: inline-block; }
+  .dot.on { background: var(--ok); }
+  button {
+    background: var(--line); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px;
+  }
+  button:hover { border-color: var(--accent); }
+  .viewport {
+    flex: 1; overflow: auto; display: grid; place-items: center; padding: 16px;
+  }
+  #screen {
+    display: block; background: #000; border: 1px solid var(--line);
+    border-radius: 4px; cursor: crosshair; user-select: none; -webkit-user-select: none;
+    touch-action: none; max-width: none;
+  }
+  #hint {
+    position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(16,19,26,.92); border: 1px solid var(--line); color: var(--dim);
+    padding: 6px 14px; border-radius: 20px; font-size: 12px; pointer-events: none; z-index: 5;
+    opacity: .9;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="tag">Perjuangan Semut</span> — Remote Play</h1>
+    <button id="pause" title="Pause/resume capture">Pause</button>
+    <div id="status">
+      <span><span id="dot" class="dot"></span> <span id="wsstate">offline</span></span>
+      <span id="fps">– fps</span>
+      <span id="dim">–×–</span>
+    </div>
+  </header>
+  <div class="viewport">
+    <img id="screen" alt="game stream" draggable="false">
+  </div>
+  <div id="hint">klik untuk mengontrol game · Esc = keluar</div>
+
+<script>
+const img = document.getElementById('screen');
+const wsState = document.getElementById('wsstate');
+const dot = document.getElementById('dot');
+const fpsEl = document.getElementById('fps');
+const dimEl = document.getElementById('dim');
+const pauseBtn = document.getElementById('pause');
+
+let ws = null;
+let paused = false;
+let dragging = false;
+let lastBtns = {};
+
+function wsConnect() {
+  ws = new WebSocket('ws://' + location.host + '/ws');
+  ws.onopen = () => { wsState.textContent = 'online'; dot.classList.add('on'); };
+  ws.onclose = () => { wsState.textContent = 'offline'; dot.classList.remove('on');
+    setTimeout(wsConnect, 1000); };
+  ws.onerror = () => ws.close();
+}
+function send(o) {
+  if (ws && ws.readyState === 1 && !paused) ws.send(JSON.stringify(o));
+}
+
+// ---- pointer -> game ----
+function imgXY(e) {
+  const r = img.getBoundingClientRect();
+  const x = Math.round(e.clientX - r.left);
+  const y = Math.round(e.clientY - r.top);
+  return { x: Math.max(0, Math.min(img.naturalWidth - 1, x)),
+           y: Math.max(0, Math.min(img.naturalHeight - 1, y)) };
+}
+function btnToB(b) { return b === 2 ? 1 : (b === 1 ? 2 : 0); } // right->1, middle->2
+
+img.addEventListener('pointerdown', e => {
+  img.setPointerCapture(e.pointerId);
+  dragging = true;
+  const p = imgXY(e), b = btnToB(e.button);
+  lastBtns[b] = true;
+  send({ t: 'down', x: p.x, y: p.y, b });
+});
+img.addEventListener('pointermove', e => {
+  const p = imgXY(e);
+  send({ t: 'move', x: p.x, y: p.y });
+});
+img.addEventListener('pointerup', e => {
+  dragging = false;
+  const p = imgXY(e), b = btnToB(e.button);
+  lastBtns[b] = false;
+  send({ t: 'up', x: p.x, y: p.y, b });
+});
+img.addEventListener('pointerleave', e => {
+  if (!dragging) return;
+  const p = imgXY(e);
+  for (const b of Object.keys(lastBtns)) {
+    if (lastBtns[b]) { send({ t: 'up', x: p.x, y: p.y, b: +b }); lastBtns[b] = false; }
+  }
+  dragging = false;
+});
+img.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- keyboard -> game (e.code -> macOS virtual keycode) ----
+const KEYMAP = {
+  'KeyA':0,'KeyB':11,'KeyC':8,'KeyD':2,'KeyE':14,'KeyF':3,'KeyG':5,'KeyH':4,
+  'KeyI':34,'KeyJ':38,'KeyK':40,'KeyL':37,'KeyM':46,'KeyN':45,'KeyO':31,'KeyP':35,
+  'KeyQ':12,'KeyR':15,'KeyS':1,'KeyT':17,'KeyU':32,'KeyV':9,'KeyW':13,'KeyX':7,
+  'KeyY':16,'KeyZ':6,
+  'Digit0':29,'Digit1':18,'Digit2':19,'Digit3':20,'Digit4':21,'Digit5':23,
+  'Digit6':22,'Digit7':26,'Digit8':28,'Digit9':25,
+  'Space':49,'Enter':36,'NumpadEnter':76,'Backspace':51,'Escape':53,'Tab':48,'CapsLock':57,
+  'ArrowUp':126,'ArrowDown':125,'ArrowLeft':123,'ArrowRight':124,
+  'Home':115,'End':119,'PageUp':116,'PageDown':121,'Delete':117,'Insert':114,
+  'ShiftLeft':56,'ShiftRight':56,'ControlLeft':59,'ControlRight':59,
+  'AltLeft':58,'AltRight':58,'MetaLeft':55,'MetaRight':55,
+  'Semicolon':41,'Equal':24,'Comma':43,'Minus':27,'Period':47,'Slash':44,
+  'Backquote':50,'BracketLeft':33,'Backslash':42,'BracketRight':30,'Quote':39,
+  'F1':122,'F2':120,'F3':99,'F4':118,'F5':96,'F6':97,'F7':98,'F8':100,
+  'F9':101,'F10':109,'F11':103,'F12':111
+};
+window.addEventListener('keydown', e => {
+  const c = KEYMAP[e.code];
+  if (c === undefined) return;
+  e.preventDefault();
+  send({ t: 'key', c, d: 1 });
+});
+window.addEventListener('keyup', e => {
+  const c = KEYMAP[e.code];
+  if (c === undefined) return;
+  send({ t: 'key', c, d: 0 });
+});
+
+// ---- pause toggle ----
+pauseBtn.addEventListener('click', () => {
+  paused = !paused;
+  pauseBtn.textContent = paused ? 'Resume' : 'Pause';
+});
+
+// ---- stream stats ----
+let frames = 0, lastT = performance.now(), lastLoad = performance.now();
+img.onload = () => {
+  frames++;
+  lastLoad = performance.now();
+  dimEl.textContent = img.naturalWidth + '×' + img.naturalHeight;
+};
+setInterval(() => {
+  const now = performance.now();
+  const fps = Math.round((frames * 1000) / (now - lastT));
+  fpsEl.textContent = fps + ' fps';
+  frames = 0; lastT = now;
+  // watchdog: reload stream if stale (server restarted)
+  if (now - lastLoad > 6000 && !paused) {
+    img.src = '/stream?_=' + Date.now();
+  }
+}, 2000);
+setInterval(() => send({ t: 'ping' }), 20000);
+
+wsConnect();
+img.src = '/stream';
+</script>
+</body>
+</html>

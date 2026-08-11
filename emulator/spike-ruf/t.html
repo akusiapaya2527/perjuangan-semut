@@ -1,0 +1,10 @@
+<!doctype html><html><body><pre id="o"></pre>
+<script>
+window.onerror = (m,s,l) => { document.getElementById('o').textContent += 'ERR '+m+' @'+l+'\n'; return true; };
+</script>
+<script src="ruffle.js"></script>
+<script>
+const o = document.getElementById('o');
+o.textContent += 'typeof RufflePlayer: ' + typeof window.RufflePlayer + '\n';
+try { o.textContent += 'newest: ' + (!!window.RufflePlayer && typeof window.RufflePlayer.newest) + '\n'; } catch(e) { o.textContent += 'newest ERR '+e.message+'\n'; }
+</script></body></html>

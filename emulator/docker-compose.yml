@@ -1,0 +1,21 @@
+services:
+  emulator:
+    build: .
+    image: antwars-emulator:local
+    container_name: antwars-emulator
+    ports:
+      - "8080:8080"   # HTTP (flashapi, res webroot, /admin)
+      - "9001:9001"   # GameServer (IC/AS3 socket)
+      - "9002:9002"   # BattleServer (robot battle)
+      - "9003:9003"   # CopyServer (CopyGame PvE)
+    volumes:
+      - ./data:/app/data   # db.json persist di host
+    environment:
+      - EMU_HOST=0.0.0.0
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/admin',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s

@@ -1,0 +1,13 @@
+__pycache__
+*.pyc
+*.log
+data/*.db
+emu.log
+adl.log
+adl.out
+run.out
+seed
+patched
+sdk
+*.md
+.git

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<application xmlns="http://ns.adobe.com/air/application/51.0">
+  <id>com.boyaa.WARSFACEBOOKID</id>
+  <versionNumber>1.14.85</versionNumber>
+  <filename>LoginSeed</filename>
+  <name>LoginSeed</name>
+  <initialWindow>
+    <content>antwarsmobilestarling.swf</content>
+    <visible>false</visible>
+  </initialWindow>
+  <supportedProfiles>desktop extendedDesktop</supportedProfiles>
+</application>

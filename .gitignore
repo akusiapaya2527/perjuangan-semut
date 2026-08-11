@@ -1,0 +1,19 @@
+# Local SDKs and runtime binaries
+emulator/sdk/
+emulator/runtime/
+emulator/spike-ruf/node_modules/
+
+# Local runtime state and secrets/data
+emulator/data/db.sqlite3*
+emulator/data/db.json
+
+# Generated logs, caches, and screenshots
+*.log
+*.out
+__pycache__/
+*.pyc
+.DS_Store
+emulator/spike-ruf/cdp*.png
+emulator/spike-ruf/hall*.png
+emulator/spike-ruf/test*.png
+

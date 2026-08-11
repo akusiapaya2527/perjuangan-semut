@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="id"><head>
+<meta charset="utf-8">
+<title>Ruffle Spike — Perjuangan Semut</title>
+<style>
+  html,body{margin:0;background:#111;height:100%}
+  #host{width:960px;height:720px;margin:0 auto;border:1px solid #333}
+  ruffle-player{width:100%;height:100%}
+  #log{color:#8f8;font:11px monospace;margin:8px;white-space:pre-wrap;max-height:260px;overflow:auto}
+</style>
+</head>
+<body>
+<div id="host"><ruffle-player></ruffle-player></div>
+<pre id="log">[console.log] DOM ready, RufflePlayer present: true
+[console.log] player created, src = antwarsmobilestarling.swf
+</pre>
+<script>
+  window.RufflePlayer = window.RufflePlayer || {};
+  window.RufflePlayer.config = {
+    autoplay: "on",
+    logLevel: "Debug",
+    allowNetworking: "all",
+    allowScriptAccess: "always",
+    unmuteOverlay: "hidden",
+    warnOnUnsupportedContent: false,
+    letterbox: "showAll",
+    contextMenu: "on",
+    renderer: "wgpu",
+    socketProxy: [
+      { host: "127.0.0.1", port: 9001, proxyUrl: "ws://127.0.0.1:8081/game" },
+      { host: "127.0.0.1", port: 9002, proxyUrl: "ws://127.0.0.1:8081/battle" },
+      { host: "127.0.0.1", port: 9003, proxyUrl: "ws://127.0.0.1:8081/copy" }
+    ]
+  };
+</script>
+<script src="ruffle.js"></script>
+<script>
+  // capture console so headless dump/logging shows AS3 + Ruffle messages
+  ['log','warn','error'].forEach(m => {
+    const o = console[m];
+    console[m] = (...a) => {
+      try { const l = document.getElementById('log'); l.textContent += '[console.' + m + '] ' + a.map(x => { try { return String(x); } catch (e) { return '?' } }).join(' ') + '\n'; } catch (e) {}
+      o.apply(console, a);
+    };
+  });
+  const log = (msg) => console.log(msg);
+
+  window.addEventListener('DOMContentLoaded', () => {
+    log('DOM ready, RufflePlayer present: ' + !!window.RufflePlayer.newest);
+    const player = window.RufflePlayer.newest().createPlayer();
+    document.getElementById('host').appendChild(player);
+    player.addEventListener('loadedmetadata', () => log('EVENT loadedmetadata'));
+    player.addEventListener('loadeddata', () => log('EVENT loadeddata'));
+    player.addEventListener('error', (e) => log('EVENT error: ' + JSON.stringify(e && e.message)));
+    player.src = 'antwarsmobilestarling.swf';
+    log('player created, src = antwarsmobilestarling.swf');
+  });
+</script>
+
+
+</body></html>
