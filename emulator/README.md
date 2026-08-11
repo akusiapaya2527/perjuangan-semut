@@ -1,5 +1,11 @@
 # Perjuangan Semut — Emulator Offline
 
+![Screenshot game Perjuangan Semut](spike-ruf/cdp18_lobby.png)
+
+**Tentang proyek ini:** emulator offline untuk game sosial RPG klasik *Perjuangan Semut / Ant Wars*. Client asli AS3/Starling dijalankan lokal melalui AIR, sedangkan HTTP gateway, GameServer, BattleServer, CopyServer, autentikasi, SQLite, quest, pertemanan, chat, dan dashboard admin diemulasi di komputer sendiri.
+
+Manual singkat untuk pengguna baru tersedia di [README utama](../README.md). Dokumen ini berisi detail teknis dan troubleshooting.
+
 Revival server emulator untuk **Perjuangan Semut (Ant Wars)** — build FB-Indonesia
 (`com.boyaa.WARSFACEBOOKID`, `lanVersion=3`). Game client AS3/Starling dijalankan via
 **Adobe AIR desktop (ADL)** di host, semua server (HTTP gateway, socket game, socket

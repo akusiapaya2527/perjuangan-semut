@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<application xmlns="http://ns.adobe.com/air/application/51.0">
+  <id>com.boyaa.WARSFACEBOOKID</id>
+  <versionNumber>1.14.85</versionNumber>
+  <filename>PerjuanganSemut</filename>
+  <name>Perjuangan semut</name>
+  <description>Localhost revival of Perjuangan Semut against the emulator backend.</description>
+  <initialWindow>
+    <content>antwarsmobilestarling.swf</content>
+    <systemChrome>standard</systemChrome>
+    <transparent>false</transparent>
+    <visible>true</visible>
+    <resizable>true</resizable>
+    <width>1365</width>
+    <height>768</height>
+    <minSize>640 480</minSize>
+    <maximizable>true</maximizable>
+    <renderMode>direct</renderMode>
+  </initialWindow>
+  <supportedProfiles>desktop extendedDesktop</supportedProfiles>
+  <renderMode>direct</renderMode>
+  <supportsMultiView>false</supportsMultiView>
+</application>

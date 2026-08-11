@@ -1,6 +1,5 @@
 # Local SDKs and runtime binaries
 emulator/sdk/
-emulator/runtime/
 emulator/spike-ruf/node_modules/
 
 # Local runtime state and secrets/data
@@ -16,4 +15,3 @@ __pycache__/
 emulator/spike-ruf/cdp*.png
 emulator/spike-ruf/hall*.png
 emulator/spike-ruf/test*.png
-
