@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<title>Ruffle Spike — Perjuangan Semut</title>
+<style>
+  html,body{margin:0;background:#111;height:100%;font-family:Arial,sans-serif;color:#eef2f7}
+  #host{width:960px;height:720px;margin:0 auto;border:1px solid #333;display:none}
+  #auth{width:760px;margin:42px auto;padding:28px;background:#1b2433;border-radius:14px;box-shadow:0 18px 60px #0008}
+  .auth-page{display:none}.auth-page.active{display:block}.auth-layout{display:grid;grid-template-columns:280px 1fr;gap:28px;align-items:center}
+  .character-preview{min-height:330px;border-radius:14px;background:radial-gradient(circle at 50% 35%,#334969,#111925 68%);display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .character-preview img{max-width:94%;max-height:310px;object-fit:contain;filter:drop-shadow(0 16px 10px #0008)}
+  .asset-note{font-size:12px;color:#94a5bb;margin-top:10px}
+  #auth h1{margin:0 0 8px;font-size:25px} #auth p{color:#aeb9c9}
+  #auth input{display:block;width:100%;box-sizing:border-box;margin:10px 0;padding:12px;border:1px solid #3a475b;border-radius:8px;background:#111925;color:#fff}
+  #auth label{display:block;margin-top:12px;font-size:13px;color:#c9d3e1}
+  #auth select{display:block;width:100%;box-sizing:border-box;margin:10px 0;padding:12px;border:1px solid #3a475b;border-radius:8px;background:#111925;color:#fff}
+  .page-link{color:#6ee7d1;cursor:pointer;text-decoration:underline;font-size:13px}
+  #auth button,#logout{border:0;border-radius:8px;padding:11px 16px;background:#18b89a;color:#fff;font-weight:700;cursor:pointer}
+  #auth .tabs{display:flex;gap:8px;margin:18px 0}.tabs button{flex:1;background:#2b374a}.tabs button.active{background:#18b89a}
+  #authStatus{min-height:20px;color:#ffadad}.auth-note{font-size:12px}
+  #gamebar{display:none;width:960px;margin:12px auto 8px;justify-content:space-between;align-items:center;color:#b9c5d5}
+  ruffle-player{width:100%;height:100%}
+  #log{color:#8f8;font:11px monospace;margin:8px;white-space:pre-wrap;max-height:260px;overflow:auto}
+</style>
+</head>
+<body>
+<section id="auth">
+  <div id="loginPage" class="auth-page">
+    <h1>Masuk ke Perjuangan Semut</h1><p>Gunakan akunmu untuk melanjutkan permainan.</p>
+    <form id="loginForm">
+      <label for="loginEmail">Email</label><input id="loginEmail" type="email" placeholder="Masukkan email" autocomplete="email" required>
+      <label for="loginPassword">Password</label><input id="loginPassword" type="password" placeholder="Masukkan password" autocomplete="current-password" required>
+      <button type="submit">Login</button>
+    </form>
+    <div id="loginStatus"></div><p class="auth-note">Belum punya akun? <span class="page-link" data-page="register">Buat akun baru</span></p>
+  </div>
+  <div id="registerPage" class="auth-page">
+    <div class="auth-layout">
+      <div><div class="character-preview"><img id="characterPreview" src="/auth-assets/58_symbol58.png" alt="Preview karakter Semut"></div><div class="asset-note">Preview memakai asset karakter hasil decompile.</div></div>
+      <div><h1>Buat Karakter Baru</h1><p>Pilih identitas karaktermu sebelum masuk ke dunia semut.</p>
+        <form id="registerForm">
+          <label for="registerName">Nama pemain</label><input id="registerName" placeholder="Masukkan nama pemain" autocomplete="name" required>
+          <label for="registerGender">Gender karakter</label><select id="registerGender" required><option value="female">Perempuan</option><option value="male">Laki-laki</option></select>
+          <label for="registerEmail">Email</label><input id="registerEmail" type="email" placeholder="Masukkan email" autocomplete="email" required>
+          <label for="registerPassword">Password</label><input id="registerPassword" type="password" placeholder="Buat password (min. 6 karakter)" autocomplete="new-password" minlength="6" required>
+          <button type="submit">Register &amp; Buat Karakter</button>
+        </form><div id="registerStatus"></div><p class="auth-note">Sudah punya akun? <span class="page-link" data-page="login">Kembali ke Login</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+<div id="gamebar"><span id="welcome"></span><button id="logout">Logout</button></div>
+<div id="host"></div>
+<pre id="log"></pre>
+<script>
+  window.RufflePlayer = window.RufflePlayer || {};
+  window.RufflePlayer.config = {
+    autoplay: "on",
+    logLevel: "Info",
+    allowNetworking: "all",
+    allowScriptAccess: "always",
+    unmuteOverlay: "hidden",
+    warnOnUnsupportedContent: false,
+    letterbox: "showAll",
+    contextMenu: "on",
+    renderer: "wgpu",
+    socketProxy: [
+      { host: "127.0.0.1", port: 9001, proxyUrl: "wss://" + window.location.host + "/game" },
+      { host: "127.0.0.1", port: 9002, proxyUrl: "wss://" + window.location.host + "/battle" },
+      { host: "127.0.0.1", port: 9003, proxyUrl: "wss://" + window.location.host + "/copy" }
+    ]
+  };
+</script>
+<script src="ruffle.js"></script>
+<script>
+  // capture console so headless dump/logging shows AS3 + Ruffle messages
+  ['log','warn','error'].forEach(m => {
+    const o = console[m];
+    console[m] = (...a) => {
+      try { const l = document.getElementById('log'); l.textContent += '[console.' + m + '] ' + a.map(x => { try { return String(x); } catch (e) { return '?' } }).join(' ') + '\n'; } catch (e) {}
+      o.apply(console, a);
+    };
+  });
+  const log = (msg) => console.log(msg);
+
+  const AUTH_API = '/auth';
+  const $ = id => document.getElementById(id);
+  function showPage(page) {
+    const selected = page === 'register' ? 'register' : 'login';
+    $('loginPage').classList.toggle('active', selected === 'login');
+    $('registerPage').classList.toggle('active', selected === 'register');
+    history.replaceState(null, '', '#' + selected);
+    document.title = selected === 'register' ? 'Register — Perjuangan Semut' : 'Login — Perjuangan Semut';
+  }
+  async function authRequest(path, payload) {
+    const response = await fetch(AUTH_API + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+    const result = await response.json();
+    if (!response.ok || !result.ok) throw new Error(result.error || 'Permintaan gagal');
+    return result;
+  }
+  function startGame(user) {
+    $('auth').style.display = 'none'; $('gamebar').style.display = 'flex'; $('host').style.display = 'block';
+    $('welcome').textContent = 'Login sebagai ' + user.name + ' (' + user.email + ')';
+    log('DOM ready, RufflePlayer present: ' + !!window.RufflePlayer.newest);
+    const player = window.RufflePlayer.newest().createPlayer();
+    document.getElementById('host').appendChild(player);
+    player.addEventListener('loadedmetadata', () => log('EVENT loadedmetadata'));
+    player.addEventListener('loadeddata', () => log('EVENT loadeddata'));
+    player.addEventListener('error', (e) => log('EVENT error: ' + JSON.stringify(e && e.message)));
+    player.load({ url: 'antwarsmobilestarling.swf' });
+  }
+  async function restoreSession() {
+    const token = localStorage.getItem('perjuangan_auth_token');
+    if (!token) return;
+    try {
+      const result = await (await fetch(AUTH_API + '/me?token=' + encodeURIComponent(token))).json();
+      if (result.ok) startGame(result.user); else localStorage.removeItem('perjuangan_auth_token');
+    } catch (error) { $('loginStatus').textContent = 'Backend login belum aktif di port 8080.'; }
+  }
+  $('loginForm').onsubmit = async event => {
+    event.preventDefault(); $('loginStatus').textContent = 'Memproses...';
+    try {
+      const result = await authRequest('/login', {email:$('loginEmail').value, password:$('loginPassword').value});
+      localStorage.setItem('perjuangan_auth_token', result.token); startGame(result.user);
+    } catch (error) { $('loginStatus').textContent = error.message; }
+  };
+  $('registerForm').onsubmit = async event => {
+    event.preventDefault(); $('registerStatus').textContent = 'Membuat akun dan karakter...';
+    try {
+      const result = await authRequest('/register', {name:$('registerName').value, gender:$('registerGender').value, email:$('registerEmail').value, password:$('registerPassword').value});
+      localStorage.setItem('perjuangan_auth_token', result.token);
+      startGame(result.user);
+    } catch (error) { $('registerStatus').textContent = error.message; }
+  };
+  document.querySelectorAll('[data-page]').forEach(link => link.onclick = () => showPage(link.dataset.page));
+  $('registerGender').onchange = () => $('characterPreview').src = '/auth-assets/' + ($('registerGender').value === 'male' ? '45_symbol45.png' : '58_symbol58.png');
+  $('logout').onclick = async () => {
+    const token = localStorage.getItem('perjuangan_auth_token');
+    try { await authRequest('/logout', {token}); } catch (error) {}
+    localStorage.removeItem('perjuangan_auth_token'); location.reload();
+  };
+  showPage(location.hash === '#register' ? 'register' : 'login');
+  window.addEventListener('hashchange', () => showPage(location.hash === '#register' ? 'register' : 'login'));
+  window.addEventListener('DOMContentLoaded', restoreSession);
+</script>
+</body>
+</html>

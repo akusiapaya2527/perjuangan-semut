@@ -1,0 +1,28 @@
+# Blok situs Perjuangan Semut — tempel ke /etc/caddy/Caddyfile di VPS,
+# lalu: sudo caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# Desain same-origin: browser hanya bicara ke domain ini.
+# Backend (8080/8081 + socket game) tetap localhost-only, tidak dibuka ke internet.
+# /admin emulator SENGAJA tidak diekspos publik — akses via SSH tunnel bila perlu.
+perjuangansemut.akusiapaya.web.id {
+	encode gzip
+
+	log {
+		output file /var/log/caddy/perjuangansemut-access.log
+		format json
+	}
+
+	@backend path /auth* /auth-assets* /antwarsmobile/*
+	handle @backend {
+		reverse_proxy 127.0.0.1:8080
+	}
+
+	@bridge path /game* /battle* /copy*
+	handle @bridge {
+		reverse_proxy 127.0.0.1:8081
+	}
+
+	handle {
+		root * /var/www/perjuangansemut
+		file_server
+	}
+}

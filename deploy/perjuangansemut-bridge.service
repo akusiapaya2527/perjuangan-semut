@@ -1,0 +1,17 @@
+[Unit]
+Description=Perjuangan Semut - WebSocket bridge for browser client (8081 -> 9001/9002/9003)
+After=network.target perjuangansemut-emulator.service
+Requires=perjuangansemut-emulator.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/perjuangansemut/app/emulator
+Environment=WS_HOST=127.0.0.1
+Environment=WS_PORT=8081
+ExecStart=/opt/perjuangansemut/.venv/bin/python ws_bridge.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
