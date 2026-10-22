@@ -2934,23 +2934,32 @@ class BattleServer(SocketServer):
         if not hasattr(self, "_robot_retry"):
             self._robot_retry = {}
         return self._robot_retry.setdefault(
-            conn, {"progress": 0, "gen": 0, "watching": False})
+            conn, {"progress": 0, "sync": 0, "gen": 0, "watching": False})
 
     def _arm_robot_retry(self, conn):
-        """Awasi progres loading map (cmd 34) setelah start robot.
+        """Kirim ulang start robot sampai battlefield BENAR-BENAR jalan.
 
         Bukti log client: urutan "cmd 38, cmd 39, BTROOM initialize" —
         initialize layar room bisa selesai DETIK setelah paket tiba
-        (muat atlas room dulu), jadi jeda tetap saja kadang kalah.
-        Bila progres belum 100, kirim ulang 38/39: binding onStartRobot
-        client bersifat "once" dan hanya terkonsumsi saat benar-benar
-        ter-dispatch, jadi pengiriman ulang aman — yang pertama sampai
-        setelah handler terikat akan memicu loading, sisanya no-op.
-        Pengiriman ulang juga menolong kasus loading berhenti di 90%
-        (antrean aset client macet di tahap akhir).
+        (muat atlas room dulu), jadi jeda tetap saja kadang kalah dan
+        paket start terbuang sebelum handler terikat.
+
+        Pelajaran sesi Reza 22 Okt 18:45 WIB: kriteria berhenti lama
+        (progres cmd 34 >= 100) SALAH — progres itu laporan muat aset
+        (dari cache bisa langsung 100 dalam sedetik) sementara client
+        tetap macet di room; watcher berhenti tanpa pernah mengirim
+        ulang. Kriteria sekarang: kirim ulang 38/39 tiap 3 detik, maks
+        8x, dan berhenti HANYA bila (a) state dibuang (cmd 41 /
+        koneksi putus), atau (b) cmd 1002 (sinkron battlefield) sudah
+        >= 2 — bukti scene battlefield hidup; room yang macet hanya
+        mengirim 1002 menyasar sesekali (teramati 1x dalam 65 detik).
+        Binding onStartRobot client bersifat "once": kirim ulang
+        sebelum ter-dispatch = no-op, yang pertama sampai setelah
+        handler terikat memicu start.
         """
         st = self._robot_state(conn)
         st["progress"] = 0
+        st["sync"] = 0
         st["gen"] += 1
         if st["watching"]:
             return
@@ -2959,13 +2968,18 @@ class BattleServer(SocketServer):
 
         def watch():
             try:
-                for _ in range(6):
+                for i in range(8):
                     time.sleep(3)
                     cur = self._robot_retry.get(conn)
                     if cur is None or cur is not st or st["gen"] != gen:
                         return
-                    if st["progress"] >= 100:
+                    if st["sync"] >= 2:
+                        log("BATTLE", "start robot terkonfirmasi: "
+                            "sinkron battlefield mengalir")
                         return
+                    log("BATTLE", "retry start robot %d/8 "
+                        "(progres %d, sinkron %d)"
+                        % (i + 1, st["progress"], st["sync"]))
                     self.send_robot_come(conn)
                     time.sleep(0.35)
                     self.send_start_robot(conn)
@@ -3099,6 +3113,9 @@ class BattleServer(SocketServer):
                 w.int(frame)   # propID (StaticFightGoods matches by frame)
                 w.int(0)       # type = success
                 self.send_cmd(conn, 1019, w)
+            elif cmd == 1002:  # sinkron battlefield: bukti scene hidup
+                st = self._robot_state(conn)
+                st["sync"] = st.get("sync", 0) + 1
             elif cmd == 41:  # robotOver body = [winner:int, myhurt:int, robothurt:int]
                 if hasattr(self, "_robot_retry"):
                     self._robot_retry.pop(conn, None)
