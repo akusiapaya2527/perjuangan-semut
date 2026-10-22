@@ -2903,10 +2903,31 @@ class BattleServer(SocketServer):
         w.string("")                 # mapURL (unused on robot path)
         w.string("")                 # musicURL
         w.int(0)                     # mapType
-        for (x, y) in [(200, 600), (1100, 600), (200, 150), (1100, 150)]:
+        # Titik spawn harus di atas tanah padat map 1001 (1024x768):
+        # daftar lama memuat x=1100 (di luar lebar map) -> semut yang
+        # kebagian titik itu jatuh ke kekosongan dan mati ~1 detik
+        # setelah battlefield tampil (robotOver instan, tanpa tembakan).
+        # Permukaan tanah utama: y~537 di x=200, y~553 di x=850.
+        for (x, y) in [(200, 480), (850, 490), (350, 480), (700, 495)]:
             w.int(x)
             w.int(y)
         self.send_cmd(conn, 39, w)
+
+    def send_robot_sequence(self, conn, first_delay=0.0, gap=0.35):
+        """Kirim onRobotCome (38) lalu onStartRobot (39) dengan jeda.
+
+        Client mengikat handler 38/39 saat layar BtRoom selesai dibuat
+        setelah paket enterRoom (cmd 5). ProcessCmd.callUserFun membuang
+        paket yang tiba sebelum handler terikat, jadi 38/39 yang dikirim
+        menempel tepat setelah cmd 5 hilang dan battle tidak pernah
+        mulai (teramati di Ruffle: room diam di slot "waiting").
+        Jeda antar-paket memberi client waktu membangun layar.
+        """
+        if first_delay > 0:
+            time.sleep(first_delay)
+        self.send_robot_come(conn)
+        time.sleep(gap)
+        self.send_start_robot(conn)
 
     def session(self, conn, addr):
         log("BATTLE", "client connected %s" % (addr,))
@@ -2970,14 +2991,12 @@ class BattleServer(SocketServer):
                     for other in room["players"].values():
                         self.send_cmd(other["conn"], 8, ready_packet)
                     if room["mode"] == 0 and ready:
-                        self.send_robot_come(conn)
-                        self.send_start_robot(conn)
+                        self.send_robot_sequence(conn, gap=0.2)
                     else:
                         self.maybe_start_pvp(room)
                         break
                 if not found_room:
-                    self.send_robot_come(conn)
-                    self.send_start_robot(conn)
+                    self.send_robot_sequence(conn, first_delay=0.4)
             elif cmd == 34:  # map loading progress
                 progress = r.int() if r.pos < len(body) else 0
                 for room in self._room_state().values():
@@ -3014,11 +3033,9 @@ class BattleServer(SocketServer):
                 w.int(1001)    # mapID -> res/MAP_SMALL/map_1001.png
                 w.string("")   # password
                 self.send_cmd(conn, 5, w)
-                self.send_robot_come(conn)
-                self.send_start_robot(conn)
+                self.send_robot_sequence(conn, first_delay=0.5)
             elif cmd == 1024:  # overFlop (empty body) -> start a fresh robot fight
-                self.send_robot_come(conn)
-                self.send_start_robot(conn)
+                self.send_robot_sequence(conn, gap=0.2)
             elif cmd == 4:  # sendFace/emote: body = [faceId:int] -> broadcast [uid, faceId]
                 face_id = r.int() if r.pos < len(body) else 0
                 w = P.Writer()
