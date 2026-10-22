@@ -2928,6 +2928,53 @@ class BattleServer(SocketServer):
         self.send_robot_come(conn)
         time.sleep(gap)
         self.send_start_robot(conn)
+        self._arm_robot_retry(conn)
+
+    def _robot_state(self, conn):
+        if not hasattr(self, "_robot_retry"):
+            self._robot_retry = {}
+        return self._robot_retry.setdefault(
+            conn, {"progress": 0, "gen": 0, "watching": False})
+
+    def _arm_robot_retry(self, conn):
+        """Awasi progres loading map (cmd 34) setelah start robot.
+
+        Bukti log client: urutan "cmd 38, cmd 39, BTROOM initialize" —
+        initialize layar room bisa selesai DETIK setelah paket tiba
+        (muat atlas room dulu), jadi jeda tetap saja kadang kalah.
+        Bila progres belum 100, kirim ulang 38/39: binding onStartRobot
+        client bersifat "once" dan hanya terkonsumsi saat benar-benar
+        ter-dispatch, jadi pengiriman ulang aman — yang pertama sampai
+        setelah handler terikat akan memicu loading, sisanya no-op.
+        Pengiriman ulang juga menolong kasus loading berhenti di 90%
+        (antrean aset client macet di tahap akhir).
+        """
+        st = self._robot_state(conn)
+        st["progress"] = 0
+        st["gen"] += 1
+        if st["watching"]:
+            return
+        st["watching"] = True
+        gen = st["gen"]
+
+        def watch():
+            try:
+                for _ in range(6):
+                    time.sleep(3)
+                    cur = self._robot_retry.get(conn)
+                    if cur is None or cur is not st or st["gen"] != gen:
+                        return
+                    if st["progress"] >= 100:
+                        return
+                    self.send_robot_come(conn)
+                    time.sleep(0.35)
+                    self.send_start_robot(conn)
+            except Exception:
+                pass
+            finally:
+                st["watching"] = False
+
+        threading.Thread(target=watch, daemon=True).start()
 
     def session(self, conn, addr):
         log("BATTLE", "client connected %s" % (addr,))
@@ -2999,6 +3046,9 @@ class BattleServer(SocketServer):
                     self.send_robot_sequence(conn, first_delay=0.4)
             elif cmd == 34:  # map loading progress
                 progress = r.int() if r.pos < len(body) else 0
+                st = self._robot_state(conn)
+                if progress > st["progress"]:
+                    st["progress"] = progress
                 for room in self._room_state().values():
                     player = room["players"].get(conn)
                     if player is None:
@@ -3050,6 +3100,8 @@ class BattleServer(SocketServer):
                 w.int(0)       # type = success
                 self.send_cmd(conn, 1019, w)
             elif cmd == 41:  # robotOver body = [winner:int, myhurt:int, robothurt:int]
+                if hasattr(self, "_robot_retry"):
+                    self._robot_retry.pop(conn, None)
                 # winner: 0 = robot lost (player won), 1 = player died
                 win = r.int()
                 # onGameOver(1006): data.winner:int, count:int,
