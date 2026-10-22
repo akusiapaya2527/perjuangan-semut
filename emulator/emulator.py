@@ -1500,6 +1500,10 @@ def handle_flashapi(body: dict):
             log("HTTP", "flashapi mid=%s tak dikenal, UID tetap %s" % (request_uid, UID))
     method = body.get("method", "")
     log("HTTP", "flashapi method=%s" % method)
+    if method == "GameMember.gameLog":
+        # Log diagnostik dari client sendiri — catat isinya agar error
+        # sisi client (tekstur, aset, stage) terbaca di jurnal server.
+        log("HTTP", "gameLog body=%s" % (str(body)[:500],))
     if method == "GameMember.load":
         return role_payload()
     if method == "GameMember.create":
@@ -2977,11 +2981,16 @@ class BattleServer(SocketServer):
         (progres cmd 34 >= 100) SALAH — progres itu laporan muat aset
         (dari cache bisa langsung 100 dalam sedetik) sementara client
         tetap macet di room; watcher berhenti tanpa pernah mengirim
-        ulang. Kriteria sekarang: kirim ulang 38/39 tiap 3 detik, maks
-        8x, dan berhenti HANYA bila (a) state dibuang (cmd 41 /
-        koneksi putus), atau (b) cmd 1002 (sinkron battlefield) sudah
-        >= 2 — bukti scene battlefield hidup; room yang macet hanya
-        mengirim 1002 menyasar sesekali (teramati 1x dalam 65 detik).
+        ulang. Kriteria v2 (kirim ulang terus sampai sinkron >= 2)
+        juga keliru arah: sesi sukses 21:00 WIB membuktikan kirim
+        ulang hanya berguna untuk membangunkan dispatch yang hilang
+        (progres masih 0); begitu progres/sinkron bergerak, start
+        sudah ter-dispatch dan pembangunan battlefield (20+ detik)
+        tidak boleh diganggu kirim ulang — sesi 21:19 WIB dengan 8x
+        kirim ulang justru tak pernah jadi.
+        Kriteria v3: kirim ulang 38/39 tiap 3 detik, maks 10x, HANYA
+        selama progres == 0 DAN sinkron == 0. Berhenti juga bila
+        state dibuang (cmd 41 / koneksi putus).
         Binding onStartRobot client bersifat "once": kirim ulang
         sebelum ter-dispatch = no-op, yang pertama sampai setelah
         handler terikat memicu start.
@@ -2997,16 +3006,24 @@ class BattleServer(SocketServer):
 
         def watch():
             try:
-                for i in range(8):
+                for i in range(10):
                     time.sleep(3)
                     cur = self._robot_retry.get(conn)
                     if cur is None or cur is not st or st["gen"] != gen:
                         return
-                    if st["sync"] >= 2:
-                        log("BATTLE", "start robot terkonfirmasi: "
-                            "sinkron battlefield mengalir")
+                    if st["progress"] > 0 or st["sync"] > 0:
+                        # Start SUDAH ter-dispatch: client sedang memuat
+                        # aset / membangun battlefield (bisa 20+ detik).
+                        # Kirim ulang di fase ini justru mengganggu
+                        # pembangunan scene (bukti sesi 22 Okt 21:19 WIB:
+                        # 8x kirim ulang, battlefield tak kunjung jadi;
+                        # sesi sukses 21:00 WIB jadi setelah kirim ulang
+                        # berhenti). Berhenti mengawasi.
+                        log("BATTLE", "start robot ter-dispatch "
+                            "(progres %d, sinkron %d); retry berhenti"
+                            % (st["progress"], st["sync"]))
                         return
-                    log("BATTLE", "retry start robot %d/8 "
+                    log("BATTLE", "retry start robot %d/10 "
                         "(progres %d, sinkron %d)"
                         % (i + 1, st["progress"], st["sync"]))
                     self.send_robot_come(conn)
