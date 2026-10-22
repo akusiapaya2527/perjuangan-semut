@@ -93,6 +93,13 @@
     history.replaceState(null, '', '#' + selected);
     document.title = selected === 'register' ? 'Register — Perjuangan Semut' : 'Login — Perjuangan Semut';
   }
+  function setAuthCookie(token) {
+    // Cookie sesi untuk game client (devicelogin membacanya agar sesi
+    // game selalu mengikuti akun web yang login, tidak tertukar).
+    document.cookie = token
+      ? 'ps_auth=' + encodeURIComponent(token) + '; path=/; max-age=2592000; SameSite=Lax'
+      : 'ps_auth=; path=/; max-age=0; SameSite=Lax';
+  }
   async function authRequest(path, payload) {
     const response = await fetch(AUTH_API + path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
     const result = await response.json();
@@ -127,14 +134,14 @@
     if (!token) return;
     try {
       const result = await (await fetch(AUTH_API + '/me?token=' + encodeURIComponent(token))).json();
-      if (result.ok) startGame(result.user); else localStorage.removeItem('perjuangan_auth_token');
+      if (result.ok) { setAuthCookie(token); startGame(result.user); } else { localStorage.removeItem('perjuangan_auth_token'); setAuthCookie(null); }
     } catch (error) { $('loginStatus').textContent = 'Backend login belum aktif di port 8080.'; }
   }
   $('loginForm').onsubmit = async event => {
     event.preventDefault(); $('loginStatus').textContent = 'Memproses...';
     try {
       const result = await authRequest('/login', {email:$('loginEmail').value, password:$('loginPassword').value});
-      localStorage.setItem('perjuangan_auth_token', result.token); startGame(result.user);
+      localStorage.setItem('perjuangan_auth_token', result.token); setAuthCookie(result.token); startGame(result.user);
     } catch (error) { $('loginStatus').textContent = error.message; }
   };
   $('registerForm').onsubmit = async event => {
@@ -142,6 +149,7 @@
     try {
       const result = await authRequest('/register', {name:$('registerName').value, gender:$('registerGender').value, email:$('registerEmail').value, password:$('registerPassword').value});
       localStorage.setItem('perjuangan_auth_token', result.token);
+      setAuthCookie(result.token);
       startGame(result.user);
     } catch (error) { $('registerStatus').textContent = error.message; }
   };
@@ -150,7 +158,7 @@
   $('logout').onclick = async () => {
     const token = localStorage.getItem('perjuangan_auth_token');
     try { await authRequest('/logout', {token}); } catch (error) {}
-    localStorage.removeItem('perjuangan_auth_token'); location.reload();
+    localStorage.removeItem('perjuangan_auth_token'); setAuthCookie(null); location.reload();
   };
   showPage(location.hash === '#register' ? 'register' : 'login');
   window.addEventListener('hashchange', () => showPage(location.hash === '#register' ? 'register' : 'login'));

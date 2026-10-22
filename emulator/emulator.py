@@ -1493,8 +1493,11 @@ def player_array(u, cid=0, cname=""):
 def handle_flashapi(body: dict):
     global UID
     request_uid = body.get("mid")
-    if request_uid is not None and str(request_uid) in DB.get("users", {}):
-        UID = int(request_uid)
+    if request_uid is not None:
+        if str(request_uid) in DB.get("users", {}):
+            UID = int(request_uid)
+        else:
+            log("HTTP", "flashapi mid=%s tak dikenal, UID tetap %s" % (request_uid, UID))
     method = body.get("method", "")
     log("HTTP", "flashapi method=%s" % method)
     if method == "GameMember.load":
@@ -1843,8 +1846,34 @@ class HttpHandler(BaseHTTPRequestHandler):
             name = qs.get("name", ["player"])[0]
             channel = qs.get("channel", ["0"])[0]
             sign = qs.get("sign", [""])[0]
+            # Sesi per-browser: UID global bisa tertukar bila ada login
+            # web lain sesudahnya (race antar tab/akun). Utamakan token
+            # sesi web: dari query ?token= (dukungan Hermes) atau cookie
+            # ps_auth yang dipasang halaman web saat login — URLLoader
+            # client berjalan di browser sehingga cookie same-origin
+            # ikut terkirim. Fallback terakhir: UID global.
+            token = qs.get("token", [""])[0]
+            if not token:
+                for part in (self.headers.get("Cookie") or "").split(";"):
+                    part = part.strip()
+                    if part.startswith("ps_auth="):
+                        token = part[len("ps_auth="):]
+                        break
+            resolved_mid = UID
+            if token:
+                session = DB.setdefault("auth_sessions", {}).get(str(token))
+                if session:
+                    acct = next((a for a in DB.setdefault("auth_users", {}).values()
+                                 if int(a.get("id", 0)) == int(session.get("user_id", 0))), None)
+                    if acct and acct.get("game_uid"):
+                        resolved_mid = int(acct["game_uid"])
+                        log("HTTP", "devicelogin sesi-terikat mid=%s" % resolved_mid)
+                    else:
+                        log("HTTP", "devicelogin token tanpa game_uid, fallback UID=%s" % UID)
+                else:
+                    log("HTTP", "devicelogin token tak dikenal, fallback UID=%s" % UID)
             log("HTTP", "devicelogin sid=%s name=%s channel=%s" % (sid, name, channel))
-            self._send_json(200, {"data": {"mid": UID, "key": SESSION_KEY}})
+            self._send_json(200, {"data": {"mid": resolved_mid, "key": SESSION_KEY}})
             return
         if rel.startswith("/api/flashapi.php"):
             win_param = qs.get("win_param", [None])[0]
@@ -3100,6 +3129,40 @@ class BattleServer(SocketServer):
                 self.send_robot_sequence(conn, first_delay=0.5)
             elif cmd == 1024:  # overFlop (empty body) -> start a fresh robot fight
                 self.send_robot_sequence(conn, gap=0.2)
+            elif cmd == 31:  # changeRoom -> room practice baru + robot lagi
+                # Client mengharapkan 1201 (onChangeRoomFast) lalu enterRoom
+                # (cmd 5) baru; pola paket sama dengan cmd 6 quickJoin.
+                for room in list(self._room_state().values()):
+                    if room["players"].get(conn) is not None:
+                        del room["players"][conn]
+                        break
+                self.send_cmd(conn, 1201, P.Writer())
+                import random as _rnd
+                w = P.Writer()
+                w.int(_rnd.randint(10000, 99999))  # roomid baru
+                w.int(0)       # siteID (self)
+                w.int(0)       # team
+                w.int(1)       # isHouseOwner
+                w.int(0)       # pk_type 0 = robot duels
+                w.int(0)       # pk_mode
+                w.int(2)       # siteStatusArr count
+                w.int(0)       # site 0 free
+                w.int(0)       # site 1 free
+                w.int(1001)    # mapID
+                w.string("")   # password
+                self.send_cmd(conn, 5, w)
+                self.send_robot_sequence(conn, first_delay=0.5)
+            elif cmd == 1011:  # luckyDraw [cardIdx] -> 1015 (format ProcessCmd.onLuckDraw)
+                # 1015: uid, cardNum, propFrame, propCount, hasProp, goldCount
+                card_idx = r.int() if r.pos < len(body) else 0
+                w = P.Writer()
+                w.int(session_uid)  # uid
+                w.int(card_idx)     # cardNum yang dibuka
+                w.int(0)            # propFrame (tak ada prop)
+                w.int(0)            # propCount
+                w.int(0)            # hasProp = 0
+                w.int(50)           # goldCount bonus tampil di client
+                self.send_cmd(conn, 1015, w)
             elif cmd == 4:  # sendFace/emote: body = [faceId:int] -> broadcast [uid, faceId]
                 face_id = r.int() if r.pos < len(body) else 0
                 w = P.Writer()
