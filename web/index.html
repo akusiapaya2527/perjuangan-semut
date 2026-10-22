@@ -108,6 +108,18 @@
     player.addEventListener('loadedmetadata', () => log('EVENT loadedmetadata'));
     player.addEventListener('loadeddata', () => log('EVENT loadeddata'));
     player.addEventListener('error', (e) => log('EVENT error: ' + JSON.stringify(e && e.message)));
+    // Keyboard: Ruffle hanya menerima tombol bila elemen player fokus.
+    player.tabIndex = 0;
+    player.style.outline = 'none';
+    const focusPlayer = () => { try { player.focus(); } catch (e) {} };
+    player.addEventListener('loadeddata', () => setTimeout(focusPlayer, 300));
+    document.getElementById('host').addEventListener('pointerdown', focusPlayer);
+    const gameKeys = [' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'PageUp', 'PageDown'];
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (gameKeys.includes(e.key)) { e.preventDefault(); focusPlayer(); }
+    });
     player.load({ url: 'antwarsmobilestarling.swf' });
   }
   async function restoreSession() {
