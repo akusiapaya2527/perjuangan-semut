@@ -721,7 +721,7 @@ def default_db():
             # tutorial starter weapon pre-equipped (slot weapon) so copygame /
             # robot battle stage entry passes the getWeapon().place==1 gate
             {"onlyID": 1, "typeID": 11, "frameID": 1091, "count": 1,
-             "attribute": "", "synthesis": "", "expiration": 0, "strengthen": 0,
+             "attribute": "30|0|0|25|0|0|0", "synthesis": "", "expiration": 0, "strengthen": 0,
              "position": 1, "term": 0, "amount": 1, "isbind": 0, "color": 0,
              "slot": "weapon"},
             {"onlyID": 2, "typeID": 26, "frameID": 1001, "count": 5,
@@ -873,7 +873,7 @@ def _normalize_loaded_db(db):
     for user in db.get("users", {}).values():
         if not user.get("goods"):
             user["goods"] = [{"onlyID": 1, "typeID": 11, "frameID": 1091,
-                               "count": 1, "attribute": "", "synthesis": "",
+                               "count": 1, "attribute": "30|0|0|25|0|0|0", "synthesis": "",
                                "expiration": 0, "strengthen": 0, "position": 1,
                                "term": 0, "amount": 1, "isbind": 0, "color": 0,
                                "slot": "weapon"}]
@@ -1027,7 +1027,7 @@ def _create_game_user(db, account_id, name, gender="female"):
     if not user["goods"]:
         user["goods"] = [{"onlyID": 1, "typeID": 11, "frameID": 1091,
                            "count": 1, "amount": 1, "position": 1,
-                           "slot": "weapon", "attribute": "", "synthesis": "",
+                           "slot": "weapon", "attribute": "30|0|0|25|0|0|0", "synthesis": "",
                            "expiration": 0, "strengthen": 0, "term": 0,
                            "isbind": 0, "color": 0}]
     users[str(game_uid)] = user
@@ -1548,7 +1548,7 @@ def handle_flashapi(body: dict):
                 "mkill": 0,
                 "appearance": 0,
             },
-            "prop": [[1, 11, 1091, 0, "", "", 0, 0, 0, 0, 1, 0]],
+            "prop": [[1, 11, 1091, 0, "30|0|0|25|0|0|0", "", 0, 0, 0, 0, 1, 0]],
         }
     param = body.get("param")
     if method == "GameFriends.getFrds":
