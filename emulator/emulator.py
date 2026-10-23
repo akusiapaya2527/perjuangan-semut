@@ -225,6 +225,37 @@ def _name_for_type(typeID):
             20: "Bonus", 25: "GiftBag", 26: "Treasure", 34: "Mission",
             36: "SuitCard", 42: "Energy"}.get(int(typeID), "Item")
 
+# ---------------------------------------------------------------------------
+# Tabel attribute item - statistik dasar tiap equipment di katalog.
+# Format nilai: "attack|defense|nimble|damage|lucky|armor|best" (diparsing
+# GoodsData.resolveAttribute di client). Item non-equipment sengaja tidak
+# ada di tabel; pemanggil mendapat "" untuk mereka.
+# ---------------------------------------------------------------------------
+_ITEM_ATTR_TABLE = None
+_ITEM_ATTR_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "item-stats.json")
+
+
+def _load_item_attr_table():
+    global _ITEM_ATTR_TABLE
+    if _ITEM_ATTR_TABLE is not None:
+        return _ITEM_ATTR_TABLE
+    try:
+        with open(_ITEM_ATTR_PATH) as _f:
+            _ITEM_ATTR_TABLE = json.load(_f)
+    except Exception:
+        _ITEM_ATTR_TABLE = {}
+    return _ITEM_ATTR_TABLE
+
+
+def attribute_for(typeID, frameID):
+    tbl = _load_item_attr_table()
+    val = tbl.get("%d:%d" % (int(typeID), int(frameID)))
+    if val and val != "0|0|0|0|0|0|0":
+        return val
+    return ""
+
+
 
 def item_catalog():
     """All catalog entries derived from texture atlas part/* subtextures.
@@ -1142,7 +1173,8 @@ def give_good(db, uid, typeID, frameID, count, place=0, slot=None):
     if u is None:
         return False
     g = {"onlyID": get_user(db, uid)["_nextOnlyID"], "typeID": int(typeID),
-         "frameID": int(frameID), "count": int(count), "attribute": "",
+         "frameID": int(frameID), "count": int(count),
+         "attribute": attribute_for(typeID, frameID),
          "synthesis": "", "expiration": 0, "strengthen": 0, "position": int(place),
          "term": 0, "amount": int(count), "isbind": 0, "color": 0}
     if slot:
