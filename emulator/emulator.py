@@ -606,7 +606,7 @@ def claim_quest_reward(db, uid, quest_id):
     return [{"mid": uid, "mrolename": user.get("name", NAME), "mgender": user.get("sex", SEX),
              "mlevel": user["level"], "mpoint": user["exp"], "mwinning": user.get("wins", 0),
              "mfailure": user.get("losses", 0)},
-            {"currency": user["currency"], "boyaacurrency": user.get("boyaa_coin", 0), "excertificate": 0},
+            {"currency": user["currency"], "boyaacurrency": user.get("boyaa_coin", 0), "excertificate": int(user.get("excertificate", 0))},
             props]
 
 
@@ -1345,8 +1345,8 @@ def role_payload():
         "account": {
             "currency": u.get("currency", 0),
             "boyaacurrency": u.get("boyaa_coin", 0),
-            "excertificate": 0,
-            "auctecoin": 0,
+            "excertificate": int(u.get("excertificate", 0)),
+            "auctecoin": int(u.get("auctecoin", 0)),
         },
         "sessionkey": SESSION_KEY,
         "time": now,
@@ -2302,7 +2302,7 @@ class HttpHandler(BaseHTTPRequestHandler):
                     save_db(DB)
                 else:
                     for k in ("name", "sex", "level", "currency", "energy", "wins", "losses",
-                              "boyaa_coin"):
+                              "boyaa_coin", "excertificate", "auctecoin"):
                         if k in body:
                             u[k] = int(body[k]) if k != "name" else str(body[k])
                     if "exp" in body:
