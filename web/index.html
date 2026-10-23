@@ -127,6 +127,89 @@
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       if (gameKeys.includes(e.key)) { e.preventDefault(); focusPlayer(); }
     });
+    // === CONTROLS SHIM: keyboard + roda mouse -> sentuh tekan-tahan sintetis ===
+    // Game ini tidak punya kontrol keyboard (game sentuh); shim menekan tombol
+    // layar atas nama pemain: A/D atau panah = gerak, W/S atau atas/bawah = sudut bidik,
+    // Spasi (tahan) = tombol tembak, P = lewati giliran, roda mouse = ubah sudut.
+    // Posisi tombol sebagai fraksi area stage (perlu kalibrasi visual; buka #cal).
+    const BTN_FRAC = {
+      left:  { fx: 0.100, fy: 0.758 },
+      right: { fx: 0.425, fy: 0.758 },
+      up:    { fx: 0.262, fy: 0.589 },
+      down:  { fx: 0.262, fy: 0.927 },
+      shoot: { fx: 0.859, fy: 0.891 },
+      pass:  { fx: 0.359, fy: 0.133 }
+    };
+    const KEYMAP = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
+      ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
+      Space: 'shoot', Enter: 'shoot', KeyP: 'pass', Escape: 'pass' };
+    const held = new Map();
+    function ruffleCanvas() { try { return player.shadowRoot ? player.shadowRoot.querySelector('canvas') : null; } catch (e) { return null; } }
+    function stageRect() {
+      const c = ruffleCanvas(); if (!c) return null;
+      const r = c.getBoundingClientRect();
+      const dw = Math.min(r.width, r.height * 4 / 3), dh = Math.min(r.height, r.width * 3 / 4);
+      return { left: r.left + (r.width - dw) / 2, top: r.top + (r.height - dh) / 2, w: dw, h: dh };
+    }
+    function firePointer(type, fx, fy, pid) {
+      const c = ruffleCanvas(), s = stageRect(); if (!c || !s) return;
+      c.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, composed: true,
+        clientX: s.left + fx * s.w, clientY: s.top + fy * s.h,
+        pointerId: pid, pointerType: 'touch', isPrimary: true,
+        button: 0, buttons: type === 'pointerup' ? 0 : 1,
+        pressure: type === 'pointerup' ? 0 : 0.5, width: 30, height: 30 }));
+    }
+    function pressBtn(name, code) {
+      if (held.has(code)) return;
+      const b = BTN_FRAC[name]; if (!b) return;
+      const pid = 100 + code.length * 7 + code.charCodeAt(code.length - 1);
+      firePointer('pointerdown', b.fx, b.fy, pid);
+      held.set(code, { pid: pid, fx: b.fx, fy: b.fy });
+      focusPlayer();
+    }
+    function releaseBtn(code) {
+      const h = held.get(code); if (!h) return;
+      firePointer('pointerup', h.fx, h.fy, h.pid);
+      held.delete(code);
+    }
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target && e.target.tagName) || '';
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      const name = KEYMAP[e.code];
+      if (name) { e.preventDefault(); pressBtn(name, e.code); }
+    }, true);
+    document.addEventListener('keyup', (e) => {
+      const name = KEYMAP[e.code];
+      if (name) { e.preventDefault(); releaseBtn(e.code); }
+    }, true);
+    let wheelBusy = false;
+    document.getElementById('host').addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (wheelBusy) return; wheelBusy = true;
+      pressBtn(e.deltaY < 0 ? 'up' : 'down', 'Wheel');
+      setTimeout(() => { releaseBtn('Wheel'); wheelBusy = false; }, 120);
+    }, { passive: false });
+    window.addEventListener('beforeunload', () => held.forEach((h, code) => releaseBtn(code)));
+    if (location.hash === '#cal') {
+      const drawMarks = () => {
+        const s = stageRect(); if (!s) return;
+        document.querySelectorAll('.calmark').forEach(m => m.remove());
+        Object.entries(BTN_FRAC).forEach(([n, b]) => {
+          const d = document.createElement('div');
+          d.className = 'calmark'; d.textContent = n;
+          d.style.cssText = 'position:fixed;z-index:99;width:30px;height:30px;margin:-15px 0 0 -15px;border:2px solid #ff3860;border-radius:50%;color:#ff3860;font:10px monospace;text-align:center;line-height:28px;pointer-events:none;background:rgba(255,56,96,.18)';
+          d.style.left = (s.left + b.fx * s.w) + 'px'; d.style.top = (s.top + b.fy * s.h) + 'px';
+          document.body.appendChild(d);
+        });
+      };
+      setInterval(drawMarks, 1500);
+      document.getElementById('host').addEventListener('pointerdown', (e) => {
+        const s = stageRect(); if (!s) return;
+        log('[cal] klik fx=' + ((e.clientX - s.left) / s.w).toFixed(3) + ' fy=' + ((e.clientY - s.top) / s.h).toFixed(3));
+      }, true);
+      log('[cal] mode kalibrasi aktif: lingkaran merah = tebakan posisi tombol shim; klik tombol game yang asli lalu catat fx/fy-nya dari log ini.');
+    }
+    // === AKHIR CONTROLS SHIM ===
     player.load({ url: 'antwarsmobilestarling.swf' });
   }
   async function restoreSession() {
